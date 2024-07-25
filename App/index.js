@@ -2,65 +2,135 @@
 // Combined code from all files
 
 import React, { useState, useEffect } from 'react';
-import { SafeAreaView, StyleSheet, Text, ScrollView, ActivityIndicator, View } from 'react-native';
-import axios from 'axios';
+import { SafeAreaView, StyleSheet, View, Button, Alert, Dimensions } from 'react-native';
 
-const WorkoutList = () => {
-    const [loading, setLoading] = useState(true);
-    const [workouts, setWorkouts] = useState([]);
+const WIDTH = Dimensions.get('window').width;
+const HEIGHT = Dimensions.get('window').height;
+const CELL_SIZE = 20;
+const DIRECTIONS = {
+    UP: { x: 0, y: -1 },
+    DOWN: { x: 0, y: 1 },
+    LEFT: { x: -1, y: 0 },
+    RIGHT: { x: 1, y: 0 },
+};
+
+let timer;
+
+const SnakeGame = () => {
+    const [snake, setSnake] = useState([
+        { x: Math.floor(WIDTH / 2 / CELL_SIZE) * CELL_SIZE, y: Math.floor(HEIGHT / 2 / CELL_SIZE) * CELL_SIZE },
+    ]);
+    const [direction, setDirection] = useState(DIRECTIONS.RIGHT);
+    const [food, setFood] = useState(getRandomFoodLocation());
+    const [isGameOver, setIsGameOver] = useState(false);
 
     useEffect(() => {
-        const fetchWorkouts = async () => {
-            try {
-                const response = await axios.post('http://apihub.p.appply.xyz:3300/chatgpt', {
-                    messages: [
-                        {
-                            role: "system",
-                            content: "You are a helpful assistant. Please provide answers for given requests."
-                        },
-                        {
-                            role: "user",
-                            content: "Please provide sample workout routines."
-                        }
-                    ],
-                    model: "gpt-4o"
-                });
-                const { data } = response;
-                const resultString = data.response;
-                const workoutData = JSON.parse(resultString); // Assuming the API returns a JSON string.
-
-                setWorkouts(workoutData);
-                setLoading(false);
-            } catch (error) {
-                console.error('Error fetching workouts:', error);
-                setLoading(false);
+        const handleKeyPress = (event) => {
+            if (event.nativeEvent.key === 'ArrowUp' && direction !== DIRECTIONS.DOWN) {
+                setDirection(DIRECTIONS.UP);
+            } else if (event.nativeEvent.key === 'ArrowDown' && direction !== DIRECTIONS.UP) {
+                setDirection(DIRECTIONS.DOWN);
+            } else if (event.nativeEvent.key === 'ArrowLeft' && direction !== DIRECTIONS.RIGHT) {
+                setDirection(DIRECTIONS.LEFT);
+            } else if (event.nativeEvent.key === 'ArrowRight' && direction !== DIRECTIONS.LEFT) {
+                setDirection(DIRECTIONS.RIGHT);
             }
         };
 
-        fetchWorkouts();
-    }, []);
+        document.addEventListener('keydown', handleKeyPress);
 
-    if (loading) {
-        return <ActivityIndicator style={styles.loader} size="large" color="#0000ff" />;
-    }
+        return () => {
+            document.removeEventListener('keydown', handleKeyPress);
+        };
+    }, [direction]);
+
+    useEffect(() => {
+        if (isGameOver) {
+            return;
+        }
+
+        timer = setInterval(() => {
+            moveSnake();
+        }, 200);
+
+        return () => clearInterval(timer);
+    });
+
+    const getRandomFoodLocation = () => {
+        const x = Math.floor(Math.random() * (WIDTH / CELL_SIZE)) * CELL_SIZE;
+        const y = Math.floor(Math.random() * (HEIGHT / CELL_SIZE)) * CELL_SIZE;
+        return { x, y };
+    };
+
+    const moveSnake = () => {
+        const newSnake = snake.map((segment, index) => {
+            if (index === 0) {
+                return {
+                    x: segment.x + direction.x * CELL_SIZE,
+                    y: segment.y + direction.y * CELL_SIZE,
+                };
+            }
+            return snake[index - 1];
+        });
+
+        const head = newSnake[0];
+        if (
+            head.x < 0 || head.x >= WIDTH ||
+            head.y < 0 || head.y >= HEIGHT ||
+            newSnake.slice(1).some(seg => seg.x === head.x && seg.y === head.y)
+        ) {
+            setIsGameOver(true);
+            clearInterval(timer);
+            Alert.alert("Game Over", `Score: ${newSnake.length}`);
+            return;
+        }
+
+        if (head.x === food.x && head.y === food.y) {
+            setFood(getRandomFoodLocation());
+            newSnake.push({});
+        } else {
+            newSnake.pop();
+        }
+
+        setSnake(newSnake);
+    };
+
+    const handleRestart = () => {
+        setSnake([
+            { x: Math.floor(WIDTH / 2 / CELL_SIZE) * CELL_SIZE, y: Math.floor(HEIGHT / 2 / CELL_SIZE) * CELL_SIZE },
+        ]);
+        setDirection(DIRECTIONS.RIGHT);
+        setFood(getRandomFoodLocation());
+        setIsGameOver(false);
+    };
 
     return (
-        <ScrollView contentContainerStyle={styles.scrollContainer}>
-            {workouts.map((workout, index) => (
-                <View key={index} style={styles.workoutBox}>
-                    <Text style={styles.workoutTitle}>{workout.title}</Text>
-                    <Text>{workout.description}</Text>
-                </View>
-            ))}
-        </ScrollView>
+        <View style={styles.snakeGameContainer}>
+            <View style={styles.board}>
+                {snake.map((segment, index) => (
+                    <View key={index} style={{
+                        ...styles.snakeSegment,
+                        left: segment.x,
+                        top: segment.y,
+                    }} />
+                ))}
+                <View style={{
+                    ...styles.food,
+                    left: food.x,
+                    top: food.y,
+                }} />
+            </View>
+            {isGameOver && <Button title="Restart" onPress={handleRestart} />}
+        </View>
     );
 };
 
 const App = () => {
     return (
         <SafeAreaView style={styles.container}>
-            <Text style={styles.title}>Workout Tracker</Text>
-            <WorkoutList />
+            <View style={styles.gameContainer}>
+                <SnakeGame />
+            </View>
         </SafeAreaView>
     );
 };
@@ -69,36 +139,36 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         marginTop: 20,
-        paddingHorizontal: 16,
-        backgroundColor: '#fff',
     },
-    title: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        marginBottom: 12,
-    },
-    scrollContainer: {
-        paddingVertical: 12,
-    },
-    loader: {
+    gameContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
     },
-    workoutBox: {
-        backgroundColor: '#f0f0f0',
-        padding: 16,
-        borderRadius: 8,
-        marginBottom: 12,
-        shadowColor: "#000",
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        shadowOffset: { width: 0, height: 2 },
+    snakeGameContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
-    workoutTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginBottom: 4,
+    board: {
+        width: WIDTH,
+        height: HEIGHT,
+        borderWidth: 2,
+        borderColor: '#333',
+        overflow: 'hidden',
+        position: 'relative',
+    },
+    snakeSegment: {
+        width: CELL_SIZE,
+        height: CELL_SIZE,
+        backgroundColor: 'green',
+        position: 'absolute',
+    },
+    food: {
+        width: CELL_SIZE,
+        height: CELL_SIZE,
+        backgroundColor: 'red',
+        position: 'absolute',
     },
 });
 
